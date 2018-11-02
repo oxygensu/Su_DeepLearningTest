@@ -4,6 +4,8 @@ from sklearn.metrics import confusion_matrix
 import numpy as np
 import load
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  #这个语句会将显卡信息隐藏
 
 # 导入load.py的数据
 train_samples, train_labels = load._train_samples, load._train_labels
@@ -57,7 +59,7 @@ class deep_fully_connected_network():
     def define_graph(self):
         '''
         定义计算图谱
-            '''
+        '''
         with self.graph.as_default():
             # 定义图谱中的各种变量
             self.tf_train_samples = tf.placeholder(
@@ -95,7 +97,7 @@ class deep_fully_connected_network():
             # 训练计算 logits为全连接最后一个数的计算
             logits = model(self.tf_train_samples)
             self.loss = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=self.tf_train_labels)
+                tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.tf_train_labels)
             )
 
             # 优化器
@@ -110,9 +112,23 @@ class deep_fully_connected_network():
         '''
         用于Session
         '''
+        # private function
+        def print_confusion_function(confusionMatrix):
+            print('Confusion Matrix:')
+            for i, line in enumerate(confusionMatrix):
+                print(line, line[i]/np.sum(line))
+            a = 0
+            for i, column in enumerate(np.transpose(confusionMatrix, (1, 0))):
+                a += ( column[i] / np.sum(column)) * (np.sum(column)/26000)
+                print(column[i]/np.sum(column), )
+            print('\n', np.sum(confusionMatrix), a)
+
+        # 训练
         self.session = tf.Session(graph=self.graph)
         with self.session as session:
             session.run(tf.global_variables_initializer())
+
+            # 训练
             print('Start Training')
             # batch_size
             for i, samples, labels in get_chunk(train_samples, train_labels, chunkSize=self.batch_size):
@@ -125,6 +141,19 @@ class deep_fully_connected_network():
                 if i % 50 == 0:
                     print('Minibatch loss at step %d: %f' % (i, l))
                     print('Minibatch accuracy: %.1f%%' % accuracy)
+
+            # 测试
+            accuracies = []
+            confusionMatrices = []
+            for i, samples, labels in get_chunk(test_samples, test_labels, chunkSize=self.test_batch_size):
+                result = self.test_prediction.eval(feed_dict={self.tf_test_samples: samples})
+                accuracy, cm = self.accuracy(result, labels, need_confusion_matrix=True)
+                accuracies.append(accuracy)
+                confusionMatrices.append(cm)
+                print('Test Accuracy: %.1f%%' % accuracy)
+            print('Average Accuracy:', np.average(accuracies))
+            print('Standard Deviation:', np.std(accuracies))
+            print_confusion_function(np.add.reduce(confusionMatrices))
 
 
     def accuracy(self, predictions, labels, need_confusion_matrix=False):
